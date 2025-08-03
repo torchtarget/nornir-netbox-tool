@@ -41,17 +41,18 @@ Sample output:
 192.168.1.50: aa:bb:cc:dd:ee:ff
 ```
 
-Check the remaining validity of an HTTPS certificate:
+Check the remaining validity of an HTTPS certificate and warn when it is
+approaching expiry:
 
 ```bash
 NETBOX_URL=https://netbox.example.com NETBOX_TOKEN=1234abcd \
-    python -m nornir_network_watch.cli https-cert --cert-url https://example.com
+    python -m nornir_network_watch.cli https-cert --cert-url https://example.com --warn-days 45
 ```
 
 Sample output:
 
 ```
-localhost: 90 days remaining
+localhost: 10 days remaining (WARNING)
 ```
 
 ## Tag-based scans
