@@ -12,7 +12,7 @@ from typing import Any, Dict
 import requests
 from nornir import InitNornir
 from nornir.core.plugins.inventory import InventoryPluginRegister
-from nornir_netbox.plugins.inventory.nb_inventory import NetBoxInventory
+from nornir_netbox.plugins.inventory import NetBoxInventory2 as NetBoxInventory
 from nornir.plugins.tasks import networking
 
 
@@ -64,3 +64,10 @@ class NornirNetworkWatch:
             return True
 
         return self.nr.run(task=_tcp, host=host, port=port)
+
+    def arp_scan(self, network: str) -> Dict[str, str]:
+        """Perform an ARP scan and return a mapping of IP to MAC addresses."""
+        from scapy.all import arping
+
+        answered, _ = arping(network, verbose=False)
+        return {rcv.psrc: rcv.hwsrc for _, rcv in answered}
