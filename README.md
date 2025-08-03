@@ -41,6 +41,19 @@ Sample output:
 192.168.1.50: aa:bb:cc:dd:ee:ff
 ```
 
+Check the remaining validity of an HTTPS certificate:
+
+```bash
+NETBOX_URL=https://netbox.example.com NETBOX_TOKEN=1234abcd \
+    python -m nornir_network_watch.cli https-cert --cert-url https://example.com
+```
+
+Sample output:
+
+```
+localhost: 90 days remaining
+```
+
 ## Tag-based scans
 
 Devices in NetBox can be tagged to control which checks run against them.
@@ -50,6 +63,7 @@ include:
 - `scan:ping` – run ICMP ping checks
 - `scan:http` – perform HTTP GET requests
 - `scan:tcp` – attempt TCP connections
+- `scan:https-cert` – check HTTPS certificate expiry
 
 Use the `--respect-tags` flag with the CLI to limit execution to devices that
 carry the corresponding tag:
