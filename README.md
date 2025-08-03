@@ -1,2 +1,12 @@
-# nornir-netbox-tool
-Tool to validate network is what netbox says
+# Nornir Network Watch
+
+Nornir Network Watch is a lightweight Python-based network validation tool that uses NetBox as the source of truth to keep your network aligned with the intended state.
+
+## Features
+
+- Discover devices and services automatically from NetBox.
+- Validate network state via ping, HTTP(S), TCP, or custom checks.
+- Detect drift or failures (e.g., unknown IPs, down services, certificate expiry).
+- Send real-time alerts to Pushover or other platforms like Slack or Telegram.
+
+Ideal for home labs or production environments that want NetBox-driven monitoring without running a full stack like Prometheus or Zabbix.
