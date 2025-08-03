@@ -27,3 +27,16 @@ Run an ARP scan of a network:
 ```bash
 python -m nornir_network_watch.cli arp --network 192.168.1.0/24
 ```
+
+Discover live hosts that are not present in NetBox:
+
+```bash
+NETBOX_URL=https://netbox.example.com NETBOX_TOKEN=1234abcd \
+    python -m nornir_network_watch.cli discover
+```
+
+Sample output:
+
+```
+192.168.1.50: aa:bb:cc:dd:ee:ff
+```
