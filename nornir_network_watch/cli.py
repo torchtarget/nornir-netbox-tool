@@ -11,7 +11,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run simple checks using NetBox data")
     parser.add_argument(
         "action",
-        choices=["ping", "arp", "discover", "https-cert"],
+        choices=["ping", "arp", "discover", "https-cert", "http", "tcp"],
         help="Check to run",
     )
     parser.add_argument("--url", dest="url", help="NetBox URL", default=os.getenv("NETBOX_URL"))
@@ -25,6 +25,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--cert-url",
         dest="cert_url",
         help="URL to check for HTTPS certificate expiry",
+    )
+    parser.add_argument("--http-url", dest="http_url", help="URL to check via HTTP")
+    parser.add_argument("--tcp-host", dest="tcp_host", help="Host for TCP check")
+    parser.add_argument(
+        "--tcp-port", dest="tcp_port", type=int, help="Port for TCP check"
     )
     parser.add_argument(
         "--respect-tags",
@@ -63,6 +68,20 @@ def main(argv: list[str] | None = None) -> None:
         for host, task_result in results.items():
             days = task_result[0].result
             print(f"{host}: {days} days remaining")
+    elif args.action == "http":
+        if not args.http_url:
+            parser.error("--http-url is required for http action")
+        results = watcher.http(args.http_url, respect_tags=args.respect_tags)
+        for host, task_result in results.items():
+            print(f"{host}: {task_result[0].result}")
+    elif args.action == "tcp":
+        if not args.tcp_host or not args.tcp_port:
+            parser.error("--tcp-host and --tcp-port are required for tcp action")
+        results = watcher.tcp(
+            args.tcp_host, args.tcp_port, respect_tags=args.respect_tags
+        )
+        for host, task_result in results.items():
+            print(f"{host}: {task_result[0].result}")
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point
