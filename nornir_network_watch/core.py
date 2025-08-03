@@ -138,23 +138,28 @@ class NornirNetworkWatch:
     def check_https_cert(
         self,
         url: str,
+        warn_days: Optional[int] = None,
         timeout: int = 5,
         respect_tags: bool = False,
     ) -> Dict[str, Any]:
         """Check HTTPS certificate expiry for a URL.
 
         Returns the number of days remaining until the certificate expires.
+        If ``warn_days`` is provided and the remaining days are below this
+        threshold, the result is flagged with a warning severity.
 
         If ``respect_tags`` is ``True``, only devices tagged with
         ``scan:https-cert`` will execute this check.
         """
 
+        import logging
         import ssl
         import socket
         from datetime import datetime
         from urllib.parse import urlparse
+        from nornir.core.task import Result
 
-        def _https_cert(task, url: str) -> int:
+        def _https_cert(task, url: str, warn_days: Optional[int]) -> Result:
             parsed = urlparse(url)
             host = parsed.hostname
             port = parsed.port or 443
@@ -165,11 +170,13 @@ class NornirNetworkWatch:
                     cert = ssock.getpeercert()
             not_after = cert["notAfter"]
             expires = datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z")
-            return (expires - datetime.utcnow()).days
+            days_remaining = (expires - datetime.utcnow()).days
+            severity = logging.WARNING if warn_days is not None and days_remaining < warn_days else logging.INFO
+            return Result(host=task.host, result=days_remaining, severity_level=severity)
 
         tag = self._tag_for("check_https_cert")
         nr = self._filter_by_tag(tag) if respect_tags else self.nr
-        return nr.run(task=_https_cert, url=url)
+        return nr.run(task=_https_cert, url=url, warn_days=warn_days)
 
     def arp_scan(self, network: str) -> Dict[str, str]:
         """Perform an ARP scan and return a mapping of IP to MAC addresses."""

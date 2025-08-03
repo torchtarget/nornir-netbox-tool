@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import argparse
+import logging
 
 from .core import NornirNetworkWatch, Settings
 from .alerts import send_alert
@@ -58,10 +59,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.getenv("SLACK_WEBHOOK"),
     )
     parser.add_argument(
-        "--cert-warn-days",
-        dest="cert_warn_days",
+        "--warn-days",
+        dest="warn_days",
         type=int,
-        help="Days before cert expiry to alert",
+        help="Days before cert expiry to warn",
         default=int(os.getenv("CERT_WARNING_DAYS", 30)),
     )
     parser.add_argument(
@@ -107,11 +108,14 @@ def run_check(action: str, watcher: NornirNetworkWatch, settings: Settings, **kw
         cert_url = kwargs.get("cert_url") or kwargs.get("url")
         if not cert_url:
             raise ValueError("cert_url is required for https-cert action")
-        results = watcher.check_https_cert(cert_url, respect_tags=respect_tags)
+        warn_days = kwargs.get("warn_days", settings.cert_warning_days)
+        results = watcher.check_https_cert(cert_url, warn_days=warn_days, respect_tags=respect_tags)
         for host, task_result in results.items():
             days = task_result[0].result
-            print(f"{host}: {days} days remaining")
-            if task_result.failed or days <= settings.cert_warning_days:
+            warn = task_result[0].severity_level >= logging.WARNING
+            status = "WARNING" if warn else "OK"
+            print(f"{host}: {days} days remaining ({status})")
+            if task_result.failed or warn:
                 send_alert(
                     f"Certificate for {cert_url} expires in {days} days ({host})",
                     settings.pushover_token,
@@ -171,7 +175,7 @@ def main(argv: list[str] | None = None) -> None:
         pushover_token=args.pushover_token,
         pushover_user=args.pushover_user,
         slack_webhook=args.slack_webhook,
-        cert_warning_days=args.cert_warn_days,
+        cert_warning_days=args.warn_days,
     )
     watcher = NornirNetworkWatch(settings)
 
@@ -184,6 +188,7 @@ def main(argv: list[str] | None = None) -> None:
         http_url=args.http_url,
         tcp_host=args.tcp_host,
         tcp_port=args.tcp_port,
+        warn_days=args.warn_days,
         respect_tags=args.respect_tags,
     )
 
