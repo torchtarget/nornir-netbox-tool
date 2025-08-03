@@ -2,3 +2,4 @@ nornir
 nornir-netbox
 requests
 scapy
+pyyaml

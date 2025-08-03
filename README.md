@@ -75,3 +75,34 @@ NETBOX_URL=https://netbox.example.com NETBOX_TOKEN=1234abcd \
 
 Only hosts tagged with `scan:ping` will be included in the run. Without the
 flag all devices from NetBox are scanned.
+
+## Configuration file
+
+Multiple checks can be executed sequentially by defining them in a YAML
+configuration file and passing it to the CLI with ``--config``:
+
+```bash
+python -m nornir_network_watch.cli --config config.yaml
+```
+
+The file contains optional global ``settings`` and a list of ``checks``. Any
+settings not provided fall back to environment variables or CLI arguments. An
+example configuration:
+
+```yaml
+settings:
+  url: https://netbox.example.com
+  token: 1234abcd
+
+checks:
+  - action: ping
+    respect_tags: true
+  - action: https-cert
+    url: https://example.com
+  - action: tcp
+    host: 10.0.0.1
+    port: 22
+```
+
+Each check entry requires an ``action`` and may include any parameters for that
+action such as ``url`` for HTTP/HTTPS checks or ``host``/``port`` for TCP.
