@@ -7,8 +7,9 @@ and simple validation checks can be executed.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
+import os
 import requests
 from nornir import InitNornir
 from nornir.core.plugins.inventory import InventoryPluginRegister
@@ -31,6 +32,10 @@ class Settings:
 
     netbox_url: str
     netbox_token: str
+    pushover_token: Optional[str] = os.getenv("PUSHOVER_TOKEN")
+    pushover_user: Optional[str] = os.getenv("PUSHOVER_USER")
+    slack_webhook: Optional[str] = os.getenv("SLACK_WEBHOOK")
+    cert_warning_days: int = int(os.getenv("CERT_WARNING_DAYS", 30))
 
 
 class NornirNetworkWatch:
