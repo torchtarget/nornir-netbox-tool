@@ -17,6 +17,12 @@ def build_parser() -> argparse.ArgumentParser:
         dest="network",
         help="Network to ARP scan (e.g., 192.168.1.0/24)",
     )
+    parser.add_argument(
+        "--respect-tags",
+        action="store_true",
+        dest="respect_tags",
+        help="Only run scans on devices with matching 'scan:<action>' tags",
+    )
     return parser
 
 
@@ -28,7 +34,7 @@ def main(argv: list[str] | None = None) -> None:
     watcher = NornirNetworkWatch(settings)
 
     if args.action == "ping":
-        results = watcher.ping()
+        results = watcher.ping(respect_tags=args.respect_tags)
         for host, task_result in results.items():
             print(f"{host}: {task_result[0].result}")
     elif args.action == "arp":

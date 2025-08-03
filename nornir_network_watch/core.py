@@ -16,6 +16,14 @@ from nornir_netbox.plugins.inventory import NetBoxInventory2 as NetBoxInventory
 from nornir.plugins.tasks import networking
 
 
+# Mapping of NetBox tags to the scan methods they enable
+SCAN_TAG_MAP = {
+    "scan:ping": "ping",
+    "scan:http": "http",
+    "scan:tcp": "tcp",
+}
+
+
 @dataclass
 class Settings:
     """Configuration options for :class:`NornirNetworkWatch`."""
@@ -41,21 +49,73 @@ class NornirNetworkWatch:
             }
         )
 
-    def ping(self) -> Dict[str, Any]:
-        """Run ICMP ping against all hosts from NetBox."""
-        return self.nr.run(networking.ping)
+    def _filter_by_tag(self, tag: str):
+        """Return a Nornir object filtered to hosts with ``tag``.
 
-    def http(self, url: str, verify: bool = True, timeout: int = 5) -> Dict[str, Any]:
-        """Run a simple HTTP GET request from each host."""
+        The NetBox inventory plugin stores tags as a list of dictionaries
+        on each host. Each dictionary contains at minimum the ``slug`` and
+        ``name`` of the tag. This helper normalises that structure and
+        returns a filtered Nornir object containing only hosts that include
+        the given tag.
+        """
+
+        def has_tag(host) -> bool:  # pragma: no cover - simple filter
+            tags = {t.get("slug") or t.get("name") for t in host.data.get("tags", [])}
+            return tag in tags
+
+        return self.nr.filter(filter_func=has_tag)
+
+    def _tag_for(self, method: str) -> str:
+        """Return the NetBox tag corresponding to a scan method."""
+        for tag, m in SCAN_TAG_MAP.items():
+            if m == method:
+                return tag
+        raise KeyError(method)
+
+    def ping(self, respect_tags: bool = False) -> Dict[str, Any]:
+        """Run ICMP ping against hosts from NetBox.
+
+        If ``respect_tags`` is ``True``, only devices tagged with
+        ``scan:ping`` will be pinged.
+        """
+
+        tag = self._tag_for("ping")
+        nr = self._filter_by_tag(tag) if respect_tags else self.nr
+        return nr.run(networking.ping)
+
+    def http(
+        self,
+        url: str,
+        verify: bool = True,
+        timeout: int = 5,
+        respect_tags: bool = False,
+    ) -> Dict[str, Any]:
+        """Run a simple HTTP GET request from each host.
+
+        If ``respect_tags`` is ``True``, only devices tagged with
+        ``scan:http`` will execute this check.
+        """
 
         def _http(task, url: str) -> int:
             response = requests.get(url, verify=verify, timeout=timeout)
             return response.status_code
 
-        return self.nr.run(task=_http, url=url)
+        tag = self._tag_for("http")
+        nr = self._filter_by_tag(tag) if respect_tags else self.nr
+        return nr.run(task=_http, url=url)
 
-    def tcp(self, host: str, port: int, timeout: int = 5) -> Dict[str, Any]:
-        """Attempt to open a TCP connection from each host."""
+    def tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: int = 5,
+        respect_tags: bool = False,
+    ) -> Dict[str, Any]:
+        """Attempt to open a TCP connection from each host.
+
+        If ``respect_tags`` is ``True``, only devices tagged with
+        ``scan:tcp`` will attempt the connection.
+        """
         import socket
 
         def _tcp(task, host: str, port: int) -> bool:
@@ -65,7 +125,9 @@ class NornirNetworkWatch:
             sock.close()
             return True
 
-        return self.nr.run(task=_tcp, host=host, port=port)
+        tag = self._tag_for("tcp")
+        nr = self._filter_by_tag(tag) if respect_tags else self.nr
+        return nr.run(task=_tcp, host=host, port=port)
 
     def arp_scan(self, network: str) -> Dict[str, str]:
         """Perform an ARP scan and return a mapping of IP to MAC addresses."""

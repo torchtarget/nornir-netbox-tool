@@ -40,3 +40,24 @@ Sample output:
 ```
 192.168.1.50: aa:bb:cc:dd:ee:ff
 ```
+
+## Tag-based scans
+
+Devices in NetBox can be tagged to control which checks run against them.
+Tags with the prefix `scan:` enable individual scan types. Supported tags
+include:
+
+- `scan:ping` – run ICMP ping checks
+- `scan:http` – perform HTTP GET requests
+- `scan:tcp` – attempt TCP connections
+
+Use the `--respect-tags` flag with the CLI to limit execution to devices that
+carry the corresponding tag:
+
+```bash
+NETBOX_URL=https://netbox.example.com NETBOX_TOKEN=1234abcd \
+    python -m nornir_network_watch.cli ping --respect-tags
+```
+
+Only hosts tagged with `scan:ping` will be included in the run. Without the
+flag all devices from NetBox are scanned.
