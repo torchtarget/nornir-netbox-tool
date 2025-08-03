@@ -21,6 +21,7 @@ SCAN_TAG_MAP = {
     "scan:ping": "ping",
     "scan:http": "http",
     "scan:tcp": "tcp",
+    "scan:https-cert": "check_https_cert",
 }
 
 
@@ -128,6 +129,42 @@ class NornirNetworkWatch:
         tag = self._tag_for("tcp")
         nr = self._filter_by_tag(tag) if respect_tags else self.nr
         return nr.run(task=_tcp, host=host, port=port)
+
+    def check_https_cert(
+        self,
+        url: str,
+        timeout: int = 5,
+        respect_tags: bool = False,
+    ) -> Dict[str, Any]:
+        """Check HTTPS certificate expiry for a URL.
+
+        Returns the number of days remaining until the certificate expires.
+
+        If ``respect_tags`` is ``True``, only devices tagged with
+        ``scan:https-cert`` will execute this check.
+        """
+
+        import ssl
+        import socket
+        from datetime import datetime
+        from urllib.parse import urlparse
+
+        def _https_cert(task, url: str) -> int:
+            parsed = urlparse(url)
+            host = parsed.hostname
+            port = parsed.port or 443
+
+            context = ssl.create_default_context()
+            with socket.create_connection((host, port), timeout=timeout) as sock:
+                with context.wrap_socket(sock, server_hostname=host) as ssock:
+                    cert = ssock.getpeercert()
+            not_after = cert["notAfter"]
+            expires = datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z")
+            return (expires - datetime.utcnow()).days
+
+        tag = self._tag_for("check_https_cert")
+        nr = self._filter_by_tag(tag) if respect_tags else self.nr
+        return nr.run(task=_https_cert, url=url)
 
     def arp_scan(self, network: str) -> Dict[str, str]:
         """Perform an ARP scan and return a mapping of IP to MAC addresses."""
