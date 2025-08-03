@@ -9,7 +9,7 @@ from .core import NornirNetworkWatch, Settings
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run simple checks using NetBox data")
-    parser.add_argument("action", choices=["ping", "arp"], help="Check to run")
+    parser.add_argument("action", choices=["ping", "arp", "discover"], help="Check to run")
     parser.add_argument("--url", dest="url", help="NetBox URL", default=os.getenv("NETBOX_URL"))
     parser.add_argument("--token", dest="token", help="NetBox token", default=os.getenv("NETBOX_TOKEN"))
     parser.add_argument(
@@ -35,6 +35,10 @@ def main(argv: list[str] | None = None) -> None:
         if not args.network:
             parser.error("--network is required for arp action")
         results = watcher.arp_scan(args.network)
+        for ip, mac in results.items():
+            print(f"{ip}: {mac}")
+    elif args.action == "discover":
+        results = watcher.discover_unknown_devices()
         for ip, mac in results.items():
             print(f"{ip}: {mac}")
 

@@ -29,12 +29,14 @@ class NornirNetworkWatch:
 
     def __init__(self, settings: Settings) -> None:
         InventoryPluginRegister.register("NetBoxInventory", NetBoxInventory)
+        self.nb_url = settings.netbox_url.rstrip("/")
+        self.nb_token = settings.netbox_token
         self.nr = InitNornir(
             inventory={
                 "plugin": "NetBoxInventory",
                 "options": {
-                    "nb_url": settings.netbox_url,
-                    "nb_token": settings.netbox_token,
+                    "nb_url": self.nb_url,
+                    "nb_token": self.nb_token,
                 },
             }
         )
@@ -71,3 +73,22 @@ class NornirNetworkWatch:
 
         answered, _ = arping(network, verbose=False)
         return {rcv.psrc: rcv.hwsrc for _, rcv in answered}
+
+    def discover_unknown_devices(self) -> Dict[str, str]:
+        """Scan all prefixes in NetBox and return IP/MAC pairs not present in NetBox."""
+        headers = {"Authorization": f"Token {self.nb_token}", "Accept": "application/json"}
+        nb_prefixes = requests.get(
+            f"{self.nb_url}/api/ipam/prefixes/?limit=0", headers=headers
+        ).json()["results"]
+        nb_ips = requests.get(
+            f"{self.nb_url}/api/ipam/ip-addresses/?limit=0", headers=headers
+        ).json()["results"]
+        known_ips = {ip["address"].split("/")[0] for ip in nb_ips}
+        unknown: Dict[str, str] = {}
+        for prefix in nb_prefixes:
+            network = prefix["prefix"]
+            hosts = self.arp_scan(network)
+            for ip, mac in hosts.items():
+                if ip not in known_ips:
+                    unknown[ip] = mac
+        return unknown
