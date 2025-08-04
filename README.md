@@ -6,6 +6,8 @@ Interetin
 
 - Discover devices and services automatically from NetBox.
 - Validate network state via ping, HTTP(S), TCP, or custom checks.
+- Build HTTP/TCP/HTTPS certificate targets directly from NetBox service
+  definitions without manual port configuration.
 - Detect drift or failures (e.g., unknown IPs, down services, certificate expiry).
 - Send real-time alerts to Pushover or other platforms like Slack or Telegram.
 - Scan a network for active hosts using ARP.
@@ -77,6 +79,15 @@ NETBOX_URL=https://netbox.example.com NETBOX_TOKEN=1234abcd \
 Only hosts tagged with `scan:ping` will be included in the run. Without the
 flag all devices from NetBox are scanned.
 
+## Service-driven checks
+
+When no explicit target is supplied, the `http`, `tcp`, and `https-cert`
+actions automatically build their scan list from the NetBox **services**
+assigned to each device. Services named `http` or `https` trigger HTTP
+requests and certificate validation, while any other TCP service results in a
+basic TCP connection check. This keeps the monitoring configuration in sync
+with NetBox and removes the need to maintain port lists in the tool's config.
+
 ## Configuration file
 
 Multiple checks can be executed sequentially by defining them in a YAML
@@ -99,11 +110,10 @@ checks:
   - action: ping
     respect_tags: true
   - action: https-cert
-    url: https://example.com
+  - action: http
   - action: tcp
-    host: 10.0.0.1
-    port: 22
 ```
 
 Each check entry requires an ``action`` and may include any parameters for that
-action such as ``url`` for HTTP/HTTPS checks or ``host``/``port`` for TCP.
+action such as ``url`` for HTTP/HTTPS checks or ``host``/``port`` for TCP. If
+these values are omitted the tool falls back to NetBox service definitions.
