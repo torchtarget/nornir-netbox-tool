@@ -106,52 +106,86 @@ def run_check(action: str, watcher: NornirNetworkWatch, settings: Settings, **kw
             print(f"{ip}: {mac}")
     elif action == "https-cert":
         cert_url = kwargs.get("cert_url") or kwargs.get("url")
-        if not cert_url:
-            raise ValueError("cert_url is required for https-cert action")
         warn_days = kwargs.get("warn_days", settings.cert_warning_days)
-        results = watcher.check_https_cert(cert_url, warn_days=warn_days, respect_tags=respect_tags)
-        for host, task_result in results.items():
-            days = task_result[0].result
-            warn = task_result[0].severity_level >= logging.WARNING
-            status = "WARNING" if warn else "OK"
-            print(f"{host}: {days} days remaining ({status})")
-            if task_result.failed or warn:
-                send_alert(
-                    f"Certificate for {cert_url} expires in {days} days ({host})",
-                    settings.pushover_token,
-                    settings.pushover_user,
-                    settings.slack_webhook,
-                )
+        results = watcher.check_https_cert(
+            cert_url, warn_days=warn_days, respect_tags=respect_tags
+        )
+        if cert_url:
+            for host, days in results.items():
+                warn = days < warn_days if warn_days is not None else False
+                status = "WARNING" if warn else "OK"
+                print(f"{host}: {days} days remaining ({status})")
+                if warn:
+                    send_alert(
+                        f"Certificate for {cert_url} expires in {days} days ({host})",
+                        settings.pushover_token,
+                        settings.pushover_user,
+                        settings.slack_webhook,
+                    )
+        else:
+            for host, url_map in results.items():
+                for url, days in url_map.items():
+                    warn = days < warn_days if warn_days is not None else False
+                    status = "WARNING" if warn else "OK"
+                    print(f"{host} {url}: {days} days remaining ({status})")
+                    if warn:
+                        send_alert(
+                            f"Certificate for {url} expires in {days} days ({host})",
+                            settings.pushover_token,
+                            settings.pushover_user,
+                            settings.slack_webhook,
+                        )
     elif action == "http":
         http_url = kwargs.get("http_url") or kwargs.get("url")
-        if not http_url:
-            raise ValueError("http_url is required for http action")
         results = watcher.http(http_url, respect_tags=respect_tags)
-        for host, task_result in results.items():
-            status = task_result[0].result
-            print(f"{host}: {status}")
-            if task_result.failed or status >= 400:
-                send_alert(
-                    f"HTTP check failed for {host}: status {status}",
-                    settings.pushover_token,
-                    settings.pushover_user,
-                    settings.slack_webhook,
-                )
+        if http_url:
+            for host, status in results.items():
+                print(f"{host}: {status}")
+                if status >= 400:
+                    send_alert(
+                        f"HTTP check failed for {host}: status {status}",
+                        settings.pushover_token,
+                        settings.pushover_user,
+                        settings.slack_webhook,
+                    )
+        else:
+            for host, url_map in results.items():
+                for url, status in url_map.items():
+                    print(f"{host} {url}: {status}")
+                    if status >= 400:
+                        send_alert(
+                            f"HTTP check failed for {host}: status {status} ({url})",
+                            settings.pushover_token,
+                            settings.pushover_user,
+                            settings.slack_webhook,
+                        )
     elif action == "tcp":
         host = kwargs.get("tcp_host") or kwargs.get("host")
         port = kwargs.get("tcp_port") or kwargs.get("port")
-        if not host or not port:
-            raise ValueError("tcp_host and tcp_port are required for tcp action")
-        results = watcher.tcp(host, int(port), respect_tags=respect_tags)
-        for host_name, task_result in results.items():
-            print(f"{host_name}: {task_result[0].result}")
-            if task_result.failed:
-                send_alert(
-                    f"TCP check failed for {host_name}:{port} -> {host}",
-                    settings.pushover_token,
-                    settings.pushover_user,
-                    settings.slack_webhook,
-                )
+        results = watcher.tcp(
+            host, port if port is None else int(port), respect_tags=respect_tags
+        )
+        if host and port:
+            for host_name, ok in results.items():
+                print(f"{host_name}: {ok}")
+                if not ok:
+                    send_alert(
+                        f"TCP check failed for {host_name}:{port} -> {host}",
+                        settings.pushover_token,
+                        settings.pushover_user,
+                        settings.slack_webhook,
+                    )
+        else:
+            for host_name, port_map in results.items():
+                for port_num, ok in port_map.items():
+                    print(f"{host_name}:{port_num}: {ok}")
+                    if not ok:
+                        send_alert(
+                            f"TCP check failed for {host_name}:{port_num}",
+                            settings.pushover_token,
+                            settings.pushover_user,
+                            settings.slack_webhook,
+                        )
     else:  # pragma: no cover - defensive programming
         raise ValueError(f"Unknown action: {action}")
 
