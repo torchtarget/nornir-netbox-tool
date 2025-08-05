@@ -341,6 +341,7 @@ class NetBoxDeviceAdder:
                 else:
                     continue
 
+
         except Exception as e:
             print(f"   ❌ Error with device type {model}: {e}")
             return None
