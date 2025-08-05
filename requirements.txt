@@ -1,5 +1,6 @@
 nornir
 nornir-netbox
+nornir-utils
 requests
-scapy
 pyyaml
+pynetbox

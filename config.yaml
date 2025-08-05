@@ -1,7 +1,9 @@
 settings:
   url: https://netbox.loschikis.com
   token: da639e87642762eb075c472ab3d18aaeebbb05e8
+  site: Loschikis Schindellegi
 
 checks:
   - action: ping
-    respect_tags: flase
+    respect_tags: false
+  - action: discover

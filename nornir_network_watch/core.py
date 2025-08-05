@@ -14,7 +14,6 @@ import requests
 from nornir import InitNornir
 from nornir.core.plugins.inventory import InventoryPluginRegister
 from nornir_netbox.plugins.inventory import NetBoxInventory2 as NetBoxInventory
-from nornir.plugins.tasks import networking
 
 
 # Mapping of NetBox tags to the scan methods they enable
@@ -97,7 +96,17 @@ class NornirNetworkWatch:
 
         tag = self._tag_for("ping")
         nr = self._filter_by_tag(tag) if respect_tags else self.nr
-        return nr.run(networking.ping)
+        def _ping(task):
+            import subprocess
+            try:
+                result = subprocess.run(['ping', '-c', '1', task.host.hostname], 
+                                      capture_output=True, text=True, timeout=5)
+                return result.returncode == 0
+            except subprocess.TimeoutExpired:
+                return False
+            except Exception:
+                return False
+        return nr.run(_ping)
 
     def http(
         self,
@@ -264,26 +273,162 @@ class NornirNetworkWatch:
 
     def arp_scan(self, network: str) -> Dict[str, str]:
         """Perform an ARP scan and return a mapping of IP to MAC addresses."""
-        from scapy.all import arping
-
-        answered, _ = arping(network, verbose=False)
-        return {rcv.psrc: rcv.hwsrc for _, rcv in answered}
+        import subprocess
+        import re
+        
+        print(f"   🔍 Running: nmap -sn {network}")
+        
+        try:
+            # Use nmap with ARP discovery for local networks
+            result = subprocess.run(['nmap', '-sn', network], 
+                                  capture_output=True, text=True, timeout=120)
+            
+            print(f"   📡 nmap exit code: {result.returncode}")
+            if result.returncode != 0:
+                print(f"   ❌ nmap stderr: {result.stderr}")
+                return {}
+            
+            # Debug: show first few lines of nmap output
+            lines = result.stdout.split('\n')
+            print(f"   📄 First 5 lines of nmap output:")
+            for line in lines[:5]:
+                if line.strip():
+                    print(f"      {line}")
+            
+            # Parse nmap output for IP/MAC pairs
+            devices = {}
+            current_ip = None
+            
+            for line in lines:
+                # Look for IP addresses in different formats
+                ip_match = re.search(r'Nmap scan report for (?:.*? \()?(\d+\.\d+\.\d+\.\d+)\)?', line)
+                if ip_match:
+                    current_ip = ip_match.group(1)
+                    print(f"   🎯 Found IP: {current_ip}")
+                
+                # Look for MAC addresses
+                if current_ip and 'MAC Address:' in line:
+                    mac_match = re.search(r'MAC Address: ([0-9A-Fa-f:]{17})', line)
+                    if mac_match:
+                        mac = mac_match.group(1)
+                        devices[current_ip] = mac
+                        print(f"   📍 Found MAC for {current_ip}: {mac}")
+                        current_ip = None  # Reset for next device
+                
+                # If we found an IP but no MAC (same subnet), assume it responded to ping
+                elif current_ip and ('Host is up' in line or 'Latency' in line):
+                    # For devices on same subnet, nmap won't show MAC
+                    devices[current_ip] = "Unknown"
+                    print(f"   📍 Found responding IP (no MAC): {current_ip}")
+                    current_ip = None
+            
+            print(f"   ✅ Total devices found: {len(devices)}")
+            return devices
+            
+        except subprocess.TimeoutExpired:
+            print(f"   ⏰ Timeout scanning {network}")
+            return {}
+        except FileNotFoundError:
+            print(f"   ❌ nmap not found - please install nmap")
+            return {}
+        except Exception as e:
+            print(f"   ❌ Error scanning {network}: {e}")
+            return {}
 
     def discover_unknown_devices(self) -> Dict[str, str]:
         """Scan all prefixes in NetBox and return IP/MAC pairs not present in NetBox."""
         headers = {"Authorization": f"Token {self.nb_token}", "Accept": "application/json"}
+        
+        print("🌐 Fetching NetBox prefixes...")
         nb_prefixes = requests.get(
             f"{self.nb_url}/api/ipam/prefixes/?limit=0", headers=headers
         ).json()["results"]
+        print(f"📋 Found {len(nb_prefixes)} prefixes in NetBox")
+        
+        print("📱 Fetching known IP addresses from NetBox...")
         nb_ips = requests.get(
             f"{self.nb_url}/api/ipam/ip-addresses/?limit=0", headers=headers
         ).json()["results"]
         known_ips = {ip["address"].split("/")[0] for ip in nb_ips}
+        print(f"📝 Found {len(known_ips)} known IP addresses in NetBox")
+        
         unknown: Dict[str, str] = {}
-        for prefix in nb_prefixes:
+        for i, prefix in enumerate(nb_prefixes, 1):
             network = prefix["prefix"]
+            print(f"\n🔍 Scanning prefix {i}/{len(nb_prefixes)}: {network}")
             hosts = self.arp_scan(network)
+            print(f"   📊 Found {len(hosts)} responding devices in {network}")
+            
+            known_in_prefix = 0
+            unknown_in_prefix = 0
+            
             for ip, mac in hosts.items():
-                if ip not in known_ips:
+                if ip in known_ips:
+                    known_in_prefix += 1
+                    print(f"   ✅ Known device: {ip} ({mac})")
+                else:
+                    unknown_in_prefix += 1
                     unknown[ip] = mac
+                    print(f"   ❓ UNKNOWN device: {ip} ({mac})")
+            
+            print(f"   📈 Summary for {network}: {known_in_prefix} known, {unknown_in_prefix} unknown")
+        
+        # Heavy scan unknown devices 
+        if unknown:
+            print(f"\n🔬 Starting detailed scan of {len(unknown)} unknown devices...")
+            
+            # Create output file with timestamp
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_file = f"unknown_devices_{timestamp}.txt"
+            
+            with open(output_file, 'w') as f:
+                f.write(f"Unknown Devices Scan Report - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write("=" * 80 + "\n\n")
+                
+                for ip, mac in unknown.items():
+                    scan_result = self.scan_unknown_device(ip, mac)
+                    f.write(f"Device: {ip} ({mac})\n")
+                    f.write("-" * 40 + "\n")
+                    f.write(scan_result)
+                    f.write("\n" + "=" * 80 + "\n\n")
+            
+            print(f"\n📄 Scan results saved to: {output_file}")
+        
         return unknown
+
+    def scan_unknown_device(self, ip: str, mac: str) -> str:
+        """Perform nmap scan on unknown device and return raw output."""
+        import subprocess
+        
+        print(f"\n🔍 Scanning {ip} ({mac})...")
+        
+        # NetBox-focused scan: ports, services, OS, hostname
+        try:
+            print(f"   Running: nmap -sS -sV -O --script=banner,http-title,snmp-info {ip}")
+            result = subprocess.run(['nmap', '-sS', '-sV', '-O', '--script=banner,http-title,snmp-info', ip], 
+                                  capture_output=True, text=True, timeout=120)
+            
+            if result.returncode == 0:
+                print("   📄 nmap output:")
+                output_lines = []
+                for line in result.stdout.split('\n'):
+                    if line.strip():
+                        print(f"      {line}")
+                        output_lines.append(line)
+                return '\n'.join(output_lines)
+            else:
+                error_msg = f"nmap failed with exit code {result.returncode}"
+                if result.stderr:
+                    error_msg += f"\nstderr: {result.stderr}"
+                print(f"   ❌ {error_msg}")
+                return error_msg
+                    
+        except subprocess.TimeoutExpired:
+            error_msg = f"nmap scan timeout for {ip}"
+            print(f"   ⏰ {error_msg}")
+            return error_msg
+        except Exception as e:
+            error_msg = f"nmap scan error: {e}"
+            print(f"   ❌ {error_msg}")
+            return error_msg

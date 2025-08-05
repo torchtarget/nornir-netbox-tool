@@ -83,7 +83,9 @@ def run_check(action: str, watcher: NornirNetworkWatch, settings: Settings, **kw
 
     respect_tags = kwargs.get("respect_tags", False)
     if action == "ping":
+        print(f"🏓 Running ping checks (respect_tags={respect_tags})...")
         results = watcher.ping(respect_tags=respect_tags)
+        print(f"✅ Ping completed for {len(results)} hosts")
         for host, task_result in results.items():
             print(f"{host}: {task_result[0].result}")
             if task_result.failed:
@@ -97,13 +99,22 @@ def run_check(action: str, watcher: NornirNetworkWatch, settings: Settings, **kw
         network = kwargs.get("network")
         if not network:
             raise ValueError("network is required for arp action")
+        print(f"🔍 Scanning network {network} for devices...")
         results = watcher.arp_scan(network)
+        print(f"✅ Found {len(results)} devices")
         for ip, mac in results.items():
             print(f"{ip}: {mac}")
     elif action == "discover":
+        print("🔍 Discovering unknown devices...")
+        print("📋 Fetching NetBox prefixes and IP addresses...")
         results = watcher.discover_unknown_devices()
-        for ip, mac in results.items():
-            print(f"{ip}: {mac}")
+        print(f"✅ Found {len(results)} unknown devices")
+        if results:
+            print("📊 Unknown devices (IP: MAC):")
+            for ip, mac in results.items():
+                print(f"  {ip}: {mac}")
+        else:
+            print("🎉 No unknown devices found - all devices are documented in NetBox!")
     elif action == "https-cert":
         cert_url = kwargs.get("cert_url") or kwargs.get("url")
         warn_days = kwargs.get("warn_days", settings.cert_warning_days)
@@ -194,10 +205,15 @@ def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.config:
+        print(f"📄 Loading configuration from {args.config}")
         cfg = load_config(args.config)
+        print(f"🔗 Connecting to NetBox at {cfg.settings.netbox_url}")
         watcher = NornirNetworkWatch(cfg.settings)
-        for check in cfg.checks:
+        print(f"🚀 Running {len(cfg.checks)} checks...")
+        for i, check in enumerate(cfg.checks, 1):
+            print(f"\n--- Check {i}/{len(cfg.checks)}: {check.action} ---")
             run_check(check.action, watcher, cfg.settings, **check.options)
+        print(f"\n✅ All checks completed!")
         return
 
     if not args.action:
