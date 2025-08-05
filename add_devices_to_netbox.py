@@ -211,34 +211,53 @@ class NetBoxDeviceAdder:
             print(f"   ❌ Error with manufacturer {manufacturer_name}: {e}")
             return None
     
-    def ensure_device_type(self, manufacturer_id: int, model: str, dry_run: bool = False) -> int:
-        """Ensure device type exists in NetBox, create if not."""
+    def ensure_device_type(
+        self,
+        manufacturer_id: int,
+        model: str,
+        height: int = 1,
+        dry_run: bool = False,
+    ) -> int:
+        """Ensure device type exists in NetBox, create if not.
+
+        Device types require a model (name), manufacturer and rack unit height. If no
+        height is provided, default to 1U.
+        """
         try:
-            device_types = list(self.api.dcim.device_types.filter(model=model))
+            device_types = list(
+                self.api.dcim.device_types.filter(
+                    model=model, manufacturer_id=manufacturer_id
+                )
+            )
             if device_types:
                 return device_types[0].id
-            
+
             if dry_run:
-                print(f"   📱 Would create device type: {model}")
+                print(f"   📱 Would create device type: {model} (height {height}U)")
                 return 1  # Dummy ID for dry run
-            
-            slug = model.lower().replace(' ', '-').replace('.', '').replace(',', '')[:50]  # NetBox slug limit
+
+            slug = (
+                model.lower().replace(" ", "-").replace(".", "").replace(",", "")[:50]
+            )  # NetBox slug limit
             device_type = self.api.dcim.device_types.create(
                 model=model,
                 slug=slug,
-                manufacturer=manufacturer_id
+                manufacturer=manufacturer_id,
+                u_height=height,
             )
-            
+
             # Add a basic interface template (eth0)
             self.api.dcim.interface_templates.create(
                 device_type=device_type.id,
                 name="eth0",
-                type="1000base-t"
+                type="1000base-t",
             )
-            
-            print(f"   ✅ Created device type: {model} (ID: {device_type.id}) with interface eth0")
+
+            print(
+                f"   ✅ Created device type: {model} (ID: {device_type.id}, {height}U) with interface eth0"
+            )
             return device_type.id
-            
+
         except Exception as e:
             print(f"   ❌ Error with device type {model}: {e}")
             return None
@@ -275,7 +294,9 @@ class NetBoxDeviceAdder:
                 return
             
             # Step 3: Ensure device type exists
-            device_type_id = self.ensure_device_type(manufacturer_id, device_info['model'], dry_run)
+            device_type_id = self.ensure_device_type(
+                manufacturer_id, device_info['model'], dry_run=dry_run
+            )
             if not device_type_id:
                 return
             
@@ -297,22 +318,39 @@ class NetBoxDeviceAdder:
                 'device_type': device_type_id,
                 'device_role': device_role.id,
                 'site': site.id,
-                'comments': f"Auto-discovered device\nOS: {device_info.get('os', 'Unknown')}\nServices: " + ', '.join([f"{s['port']}/{s['service']}" for s in device_info['services']])
+                'comments': (
+                    f"Auto-discovered device\nOS: {device_info.get('os', 'Unknown')}\nServices: "
+                    + ', '.join(
+                        [f"{s['port']}/{s['service']}" for s in device_info['services']]
+                    )
+                ),
             }
-            
+
             device = self.api.dcim.devices.create(**device_data)
             print(f"   ✅ Device created: {device_name} (ID: {device.id})")
-            
-            # Step 6: Add IP address
+
+            # Step 6: Ensure interface exists
+            interfaces = list(self.api.dcim.interfaces.filter(device_id=device.id))
+            if interfaces:
+                interface = interfaces[0]
+            else:
+                interface = self.api.dcim.interfaces.create(
+                    device=device.id,
+                    name="eth0",
+                    type="1000base-t",
+                )
+                print(f"   ✅ Created interface eth0 for {device_name}")
+
+            # Step 7: Add IP address to interface
             ip_data = {
                 'address': f"{device_info['ip']}/32",
-                'assigned_object_type': 'dcim.device',
-                'assigned_object_id': device.id,
+                'assigned_object_type': 'dcim.interface',
+                'assigned_object_id': interface.id,
                 'description': f"Auto-discovered IP for {device_name}"
             }
-            
+
             ip_addr = self.api.ipam.ip_addresses.create(**ip_data)
-            print(f"   ✅ IP address created: {device_info['ip']} (ID: {ip_addr.id})")
+            print(f"   ✅ IP address created: {device_info['ip']} (ID: {ip_addr.id}) and assigned to interface {interface.name}")
             
         except Exception as e:
             print(f"   ❌ Error creating device: {e}")
